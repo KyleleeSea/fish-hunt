@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fish Hunt</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="top">
+      <div id="role-badge" class="pill">—</div>
+      <div id="timer" class="pill">0:00</div>
+      <div id="score" class="pill">0 · 0</div>
+    </div>
+    <div id="phase-label" class="pill"></div>
+    <div id="center-msg"></div>
+    <div id="sub-msg"></div>
+    <div id="sense"><div id="sense-arrow">➤</div><div id="sense-text">You sense the hider…</div></div>
+    <div id="shark-warn" class="pill">🦈 SHARK!</div>
+    <div id="bottom">
+      <div id="health"><div id="health-bar"></div><span id="health-text">100</span></div>
+      <div id="hint" class="pill">WASD swim · Space up · C down · Shift dash · Click to shoot · E to tag</div>
+    </div>
+    <div id="danger"></div>
+    <div id="hurt"></div>
+    <div id="ink"></div>
+    <div id="crosshair"><span></span></div>
+    <div id="eaten" class="hidden"><div>🦈 CHOMP!</div><p>You got eaten… respawning</p></div>
+  </div>
+
+  <div id="blindfold" class="hidden">
+    <div class="eyes"><span></span><span></span></div>
+    <div id="blind-title">Eyes shut, fishy!</div>
+    <div id="blind-count">30</div>
+    <div id="blind-sub">The other fish is hiding in the reef…</div>
+  </div>
+
+  <div id="lobby">
+    <div class="card">
+      <div class="logo">🐟</div>
+      <h1>Fish Hunt</h1>
+      <p class="tag">Two fish. One reef. Hide &amp; seek… with guns. And sharks.</p>
+      <div id="join-form">
+        <input id="name" maxlength="16" placeholder="Your fish name" autocomplete="off">
+        <div class="row">
+          <button id="host" class="primary">Host a game</button>
+          <span class="or">or</span>
+          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <button id="join">Join</button>
+        </div>
+        <p id="form-error" class="error hidden"></p>
+      </div>
+      <div id="lobby-status" class="hidden">
+        <div class="spinner"></div>
+        <p id="status-text">Waiting for another fish…</p>
+        <div id="room-info" class="hidden">
+          <div class="room-code"><span>Room code</span><b id="room-code">ABCD</b></div>
+          <p class="share">Send your friend this link:<br><code id="share-url"></code> <button id="copy" class="mini">Copy</button></p>
+        </div>
+      </div>
+      <div class="rules">
+        <div><b>Hider</b> 🐠 gets 30s to vanish into the reef while the seeker shuts their eyes.</div>
+        <div><b>Seeker</b> 🔫 has 100s to find them: land 3 shots or tag with <kbd>E</kbd>.</div>
+        <div><b>Sharks</b> 🦈 hunt both of you. Shoot them before they bite. Hider shots ink the seeker's view.</div>
+        <div>Roles swap each round. Hide in kelp, caves, the wreck, or under coral.</div>
+        <div class="fine">Peer-to-peer over WebRTC — one of you hosts, the other joins with the code.</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
