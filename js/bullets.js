@@ -25,12 +25,20 @@ export class BulletSystem {
     this._p = new THREE.Vector3();
   }
 
-  spawn(origin, dir, role, own) {
-    const m = new THREE.Mesh(this.geo, this.mats[role] || this.mats.none);
+  spawn(origin, dir, role, own, weapon = 'gun') {
+    let m;
+    if (weapon === 'net') {
+      if (!this.netGeo) this.netGeo = new THREE.IcosahedronGeometry(0.7, 1);
+      if (!this.netMat) this.netMat = new THREE.MeshBasicMaterial({ color: 0xd9f3ff, wireframe: true });
+      m = new THREE.Mesh(this.netGeo, this.netMat);
+    } else {
+      m = new THREE.Mesh(this.geo, this.mats[role] || this.mats.none);
+    }
     m.position.copy(origin);
     m.lookAt(origin.clone().add(dir));
     this.scene.add(m);
-    this.bullets.push({ mesh: m, pos: origin.clone(), dir: dir.clone().normalize(), life: LIFE, own });
+    const net = weapon === 'net';
+    this.bullets.push({ mesh: m, pos: origin.clone(), dir: dir.clone().normalize(), life: net ? 1.4 : LIFE, own, weapon, speed: net ? 24 : SPEED, radiusBonus: net ? 0.9 : 0, playersOnly: net });
   }
 
   puff(point, scale = 1) {
@@ -47,7 +55,7 @@ export class BulletSystem {
   update(dt, targets) {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
-      const step = SPEED * dt;
+      const step = b.speed * dt;
       let hitT = step;
       let hit = null;
       for (const c of this.colliders) {
@@ -56,17 +64,19 @@ export class BulletSystem {
       }
       if (b.own) {
         for (const tg of targets) {
-          const t = raySphere(b.pos, b.dir, tg.center, tg.radius);
+          if (b.playersOnly && tg.kind !== 'player') continue;
+          const t = raySphere(b.pos, b.dir, tg.center, tg.radius + b.radiusBonus);
           if (t < hitT) { hitT = t; hit = tg; }
         }
       }
       b.pos.addScaledVector(b.dir, hitT);
       b.mesh.position.copy(b.pos);
+      if (b.weapon === 'net') { b.mesh.rotation.x += dt * 6; b.mesh.rotation.y += dt * 4; }
       b.life -= dt;
       if (hit || b.life <= 0 || b.pos.y < 0.05 || b.pos.y > 17.5) {
         if (hit) {
           this.puff(b.pos, hit.kind === 'world' ? 1 : 1.6);
-          if (hit.kind !== 'world') this.onOwnHit(hit.kind, hit.id, b.pos);
+          if (hit.kind !== 'world') this.onOwnHit(hit.kind, hit.id, b.pos, b.weapon);
         }
         this.scene.remove(b.mesh);
         this.bullets.splice(i, 1);

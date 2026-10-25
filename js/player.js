@@ -23,6 +23,9 @@ export class LocalPlayer {
     this.anim = 'idle';
     this._wish = new THREE.Vector3();
     this._delta = new THREE.Vector3();
+    this.tangled = false;
+    this.torpedoUntil = 0;   // seconds (performance.now()/1000) until the torpedo dash ends
+    this.torpedoDir = new THREE.Vector3();
     this.stamina = 1;        // 0..1, drained by sprinting
     this.exhausted = false;  // after running dry, wait for a partial refill
     this.sprinting = false;
@@ -69,11 +72,18 @@ export class LocalPlayer {
     }
     let maxSpeed = this.baseSpeed * (this.sprinting ? 1.9 : 1);
     if (this.dazed) maxSpeed *= 0.45;
+    if (this.tangled) maxSpeed *= 0.15;
 
-    const accel = wish.lengthSq() > 0 ? 22 : 12; // water drag when coasting
-    this.vel.x = approach(this.vel.x, wish.x * maxSpeed, accel * dt);
-    this.vel.y = approach(this.vel.y, wish.y * maxSpeed, accel * dt);
-    this.vel.z = approach(this.vel.z, wish.z * maxSpeed, accel * dt);
+    const nowS = performance.now() / 1000;
+    if (nowS < this.torpedoUntil && canMove) {
+      // torpedo dash: locked to the aim direction at high speed
+      this.vel.copy(this.torpedoDir).multiplyScalar(this.tangled ? 6 : 24);
+    } else {
+      const accel = wish.lengthSq() > 0 ? 22 : 12; // water drag when coasting
+      this.vel.x = approach(this.vel.x, wish.x * maxSpeed, accel * dt);
+      this.vel.y = approach(this.vel.y, wish.y * maxSpeed, accel * dt);
+      this.vel.z = approach(this.vel.z, wish.z * maxSpeed, accel * dt);
+    }
     if (this.dead) { this.vel.set(0, 0, 0); }
 
     const delta = this._delta.copy(this.vel).multiplyScalar(dt);
@@ -89,6 +99,7 @@ export class LocalPlayer {
 
     const speed = this.vel.length();
     this.anim = this.cover ? 'cover' : this.dead ? 'dead' : speed > 0.5 ? 'swim' : 'idle';
+    this.torpedoing = nowS < this.torpedoUntil;
     this.apply();
     this.fish.update(dt, { speed, vy: this.vel.y, turn, cover: this.cover, dead: this.dead });
   }

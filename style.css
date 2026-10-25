@@ -60,12 +60,13 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #hitmark.show { animation: hitpop 0.3s ease-out; }
 @keyframes hitpop { 0% { opacity: 1; transform: scale(1.5); } 100% { opacity: 0; transform: scale(0.9); } }
 #abilities { position: absolute; right: 18px; bottom: 20px; display: flex; gap: 10px; }
-.chip { position: relative; width: 92px; height: 60px; border-radius: 14px; background: rgba(243,251,255,0.9); box-shadow: 0 6px 18px rgba(0,30,60,0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-weight: 700; }
-.chip b { font-size: 20px; color: var(--sea); } .chip span { font-size: 13px; opacity: 0.8; }
+.chip { position: relative; width: 78px; height: 58px; border-radius: 14px; background: rgba(243,251,255,0.9); box-shadow: 0 6px 18px rgba(0,30,60,0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-weight: 700; }
+.chip b { font-size: 18px; color: var(--sea); } .chip span { font-size: 12px; opacity: 0.8; white-space: nowrap; }
 .chip em { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: rgba(31,124,182,0.35); font-style: normal; }
 .chip.cooling { opacity: 0.75; } .chip.cooling b { color: #8a98a8; }
 .chip.ready { animation: readypop 0.4s; } @keyframes readypop { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
-#bottom { padding: 0 120px; }
+#bottom { padding: 0 150px 0 0; }
+#abilities { bottom: 20px; }
 #sense { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; flex-direction: column; align-items: center; gap: 6px; }
 #sense.show { display: flex; }
 #sense-arrow { font-size: 70px; color: #fff; text-shadow: 0 3px 0 rgba(0,30,60,0.4); transform-origin: center; animation: sniff 1s infinite; }

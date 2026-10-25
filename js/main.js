@@ -32,7 +32,7 @@ const ui = {
   center: $('center-msg'), sub: $('sub-msg'), hint: $('hint'), danger: $('danger'), hurt: $('hurt'), ink: $('ink'), crosshair: $('crosshair'),
   sense: $('sense'), senseArrow: $('sense-arrow'), senseText: $('sense-text'), sharkWarn: $('shark-warn'),
   health: $('health-bar'), healthText: $('health-text'), eaten: $('eaten'), hitmark: $('hitmark'), staminaBar: $('stamina-bar'),
-  chipFlare: $('chip-flare'), chipSpecial: $('chip-special'),
+  abilities: $('abilities'),
   blindfold: $('blindfold'), blindCount: $('blind-count'),
   lobby: $('lobby'), joinForm: $('join-form'), lobbyStatus: $('lobby-status'), statusText: $('status-text'),
   name: $('name'), code: $('code'), join: $('join'), host: $('host'), formError: $('form-error'),
@@ -48,7 +48,7 @@ function banner(text, sub = '', secs = 3) {
 
 // ---- Input ---------------------------------------------------------------
 const keys = new Set();
-let tagQueued = false, shootHeld = false, shootQueued = false, flareQueued = false, specialQueued = false;
+let tagQueued = false, shootHeld = false, shootQueued = false, flareQueued = false, specialQueued = false, netQueued = false, torpedoQueued = false, whistleQueued = false;
 addEventListener('keydown', (e) => {
   if (e.target === ui.name || e.target === ui.code) return;
   keys.add(e.code);
@@ -57,6 +57,9 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') shootQueued = true;
   if (e.code === 'KeyQ') flareQueued = true;
   if (e.code === 'KeyR') specialQueued = true;
+  if (e.code === 'KeyT') netQueued = true;
+  if (e.code === 'KeyG') torpedoQueued = true;
+  if (e.code === 'KeyV') whistleQueued = true;
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); shootHeld = false; });
@@ -79,6 +82,11 @@ const myFish = new Fish();
 scene.add(myFish.group);
 const me = new LocalPlayer(myFish, colliders);
 me.frozen = true;
+const netGeo = new THREE.IcosahedronGeometry(0.95, 1);
+const netMat = new THREE.MeshBasicMaterial({ color: 0xd9f3ff, wireframe: true, transparent: true, opacity: 0.8 });
+const netMesh = new THREE.Mesh(netGeo, netMat);
+netMesh.visible = false;
+myFish.group.add(netMesh);
 /** @type {Map<number, RemoteActor>} */
 const remotes = new Map();
 /** @type {Map<number, RemoteActor>} */
@@ -87,11 +95,11 @@ const sharks = new Map();
 const state = {
   myId: null, phase: 'lobby', timeLeft: 0, round: 0, role: null, wins: 0, hp: 100, hits: 0, dazed: false, dead: false,
   hideTime: 10, seekTime: 100, joined: false, lastTick: -1, otherName: '', revealUntil: 0, revealPos: null, revealText: '', inkUntil: 0,
-  boost: false, cd: { flare: 0, ink: 0, sonar: 0 }, flares: [], pearls: [],
+  boost: false, tangled: false, cd: { flare: 0, ink: 0, sonar: 0, whistle: 0, net: 0, torpedo: 0 }, flares: [], pearls: [],
 };
 
-const bullets = new BulletSystem(scene, colliders, (kind, id) => {
-  net.send({ type: 'hit', kind, id });
+const bullets = new BulletSystem(scene, colliders, (kind, id, point, weapon) => {
+  net.send({ type: 'hit', kind, id, weapon });
   sfx.hit();
   ui.hitmark.classList.remove('show'); void ui.hitmark.offsetWidth; ui.hitmark.classList.add('show');
 });
@@ -127,13 +135,14 @@ function applyState(s) {
     seen.add(p.id);
     if (p.id === state.myId) {
       if (state.role !== p.role) { state.role = p.role; myFish.setRole(p.role); }
-      state.wins = p.wins; state.hp = p.hp; state.hits = p.hits; state.dazed = p.dazed; state.dead = p.dead; state.boost = !!p.boost; if (p.cd) state.cd = p.cd;
+      state.wins = p.wins; state.hp = p.hp; state.hits = p.hits; state.dazed = p.dazed; state.dead = p.dead; state.boost = !!p.boost; state.tangled = !!p.tangled; if (p.cd) Object.assign(state.cd, p.cd);
       continue;
     }
     let r = remotes.get(p.id);
     if (!r) { const f = new Fish(p.role); scene.add(f.group); r = new RemoteActor(f, PLAYER_HEIGHT / 2); remotes.set(p.id, r); }
     if (r.model.role !== p.role) r.model.setRole(p.role);
     r.setTarget(p.pos, p.yaw, p.anim, { dead: p.dead });
+    r.tangled = !!p.tangled;
     r.wins = p.wins; r.name = p.name; r.id = p.id; r.hp = p.hp; r.hits = p.hits;
     state.otherName = p.name;
   }
@@ -193,18 +202,27 @@ function onEvent(e) {
   const now = performance.now() / 1000;
   switch (e.name) {
     case 'tagMiss': sfx.miss(); break;
-    case 'shot': {
-      const o = new THREE.Vector3(...e.o), d = new THREE.Vector3(...e.d);
-      bullets.spawn(o, d, e.role, false);
-      const r = remotes.get(e.by); if (r) r.model.fireFlash();
-      break;
-    }
     case 'sharkHit': { const s = sharks.get(e.id); if (s) s.model.hitFlash(); break; }
     case 'sharkDied': { sfx.sharkDie(); if (e.by === state.myId) banner('LEBRON DOWN! 🏀', 'He\'ll be back for the fourth quarter…', 2); break; }
     case 'flare': { sfx.bubble(); if (e.by !== state.myId) banner('', `${state.otherName} threw a flare 🔥`, 1.5); break; }
     case 'inkCloud': spawnInk(e.pos, e.secs, e.by === state.myId); if (e.by !== state.myId) sfx.ink(); break;
     case 'sonar': state.revealUntil = now + 2.5; state.revealPos = e.pos; state.revealText = `Sonar: hider ${e.dist} m away`; sfx.tick(); break;
     case 'pinged': banner('PING! 📡', 'The seeker just scanned for you — move!', 2); sfx.tick(); break;
+    case 'tangled':
+      if (e.victim === state.myId) { banner('NETTED! 🕸️', `You're tangled for ${e.secs}s — wriggle!`, 2); sfx.hurt(); }
+      else { banner('GOT \'EM! 🕸️', 'The hider is tangled — close in!', 2); sfx.hit(); }
+      break;
+    case 'whistle':
+      if (e.by === state.myId) { banner('WHISTLE! 🏀', 'LeBron is heading for the hider\'s spot…', 2.5); sfx.whistle(); }
+      else { banner('A WHISTLE… 🏀', 'LeBron is coming to where you are. Move!', 2.5); sfx.whistle(); }
+      break;
+    case 'lunge': if (e.victim === state.myId) sfx.roar(); break;
+    case 'shot': {
+      const o = new THREE.Vector3(...e.o), d = new THREE.Vector3(...e.d);
+      bullets.spawn(o, d, e.role, false, e.weapon === 'net' ? 'net' : 'gun');
+      const r = remotes.get(e.by); if (r) r.model.fireFlash();
+      break;
+    }
     case 'pearl':
       if (e.by === state.myId) { banner('PEARL! 🫧', '+50 health and a speed boost!', 2); sfx.win(); }
       break;
@@ -332,6 +350,7 @@ const flareGeo = new THREE.SphereGeometry(0.22, 10, 8);
 function syncFlares() {
   const seen = new Set();
   for (const f of state.flares) {
+    if (f.kind === 'whistle') continue;
     seen.add(f.id);
     let m = flareMeshes.get(f.id);
     if (!m) {
@@ -399,12 +418,29 @@ function updateEffects(dt, now) {
     if (k.life <= 0) { scene.remove(k.m); inks.splice(i, 1); }
   }
 }
+const KITS = {
+  hider:  [['Q', 'Flare', 'flare', 15], ['R', 'Ink', 'ink', 20]],
+  seeker: [['R', 'Sonar', 'sonar', 15], ['T', 'Net', 'net', 18], ['G', 'Torpedo', 'torpedo', 10], ['V', 'Whistle', 'whistle', 30], ['Q', 'Flare', 'flare', 15]],
+};
+let chipRole = null;
+const chipEls = new Map();
 function updateAbilityChips() {
-  const amHider = state.role === 'hider';
-  const specialName = amHider ? 'Ink' : 'Sonar';
-  const specialCd = amHider ? state.cd.ink : state.cd.sonar;
-  const specialMax = amHider ? 20 : 15;
-  for (const [chip, cd, max, label] of [[ui.chipFlare, state.cd.flare, 15, 'Flare'], [ui.chipSpecial, specialCd, specialMax, specialName]]) {
+  const role = state.role || 'hider';
+  if (chipRole !== role) {
+    chipRole = role;
+    ui.abilities.innerHTML = '';
+    chipEls.clear();
+    for (const [key, label, id] of KITS[role]) {
+      const el = document.createElement('div');
+      el.className = 'chip';
+      el.innerHTML = `<b>${key}</b><span>${label}</span><em></em>`;
+      ui.abilities.appendChild(el);
+      chipEls.set(id, el);
+    }
+  }
+  for (const [, label, id, max] of KITS[role]) {
+    const chip = chipEls.get(id);
+    const cd = state.cd[id] || 0;
     chip.querySelector('span').textContent = cd > 0.05 ? `${label} ${Math.ceil(cd)}s` : label;
     chip.querySelector('em').style.height = `${Math.min(100, cd / max * 100)}%`;
     const cooling = cd > 0.05;
@@ -416,10 +452,13 @@ function updateAbilityChips() {
 // ---- Shooting ------------------------------------------------------------
 let fireCd = 0;
 const aimPoint = new THREE.Vector3(), muzzle = new THREE.Vector3(), shotDir = new THREE.Vector3();
-function tryShoot() {
-  if (fireCd > 0 || me.frozen || me.dead || !state.joined) return;
-  // the seeker's gun is heavier: fewer shots per second than the hider's
-  fireCd = state.role === 'seeker' ? 0.6 : 0.22;
+function tryShoot(weapon = 'gun') {
+  if (me.frozen || me.dead || !state.joined) return;
+  if (weapon === 'gun') {
+    if (fireCd > 0) return;
+    // the seeker's gun is heavier: fewer shots per second than the hider's
+    fireCd = state.role === 'seeker' ? 0.6 : 0.22;
+  }
   // aim at whatever the crosshair is on
   let t = 70;
   for (const b of colliders) { const h = rayBox(camera.position, camForward, b); if (h < t && h > cam.curDist) t = h; }
@@ -427,10 +466,10 @@ function tryShoot() {
   aimPoint.copy(camera.position).addScaledVector(camForward, t);
   myFish.muzzleWorld(muzzle);
   shotDir.copy(aimPoint).sub(muzzle).normalize();
-  bullets.spawn(muzzle, shotDir, state.role, true);
+  bullets.spawn(muzzle, shotDir, state.role, true, weapon);
   myFish.fireFlash();
-  sfx.shoot();
-  net.send({ type: 'shoot', o: [muzzle.x, muzzle.y, muzzle.z], d: [shotDir.x, shotDir.y, shotDir.z] });
+  weapon === 'net' ? sfx.bubble() : sfx.shoot();
+  net.send({ type: 'shoot', o: [muzzle.x, muzzle.y, muzzle.z], d: [shotDir.x, shotDir.y, shotDir.z], weapon });
 }
 function sharkSpheres(s) {
   const f = new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw));
@@ -450,6 +489,7 @@ function frame(nowMs) {
   me.cover = state.phase === 'hide' && amSeeker;
   me.dazed = state.dazed || now < state.inkUntil;
   me.dead = state.dead;
+  me.tangled = state.tangled;
   me.baseSpeed = (amSeeker ? 7 : 6.5) * (state.boost ? 1.4 : 1);
 
   input.f = keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0;
@@ -468,7 +508,7 @@ function frame(nowMs) {
   updateWorld(now, dt);
 
   fireCd -= dt;
-  state.cd.flare = Math.max(0, state.cd.flare - dt); state.cd.ink = Math.max(0, state.cd.ink - dt); state.cd.sonar = Math.max(0, state.cd.sonar - dt);
+  for (const k of Object.keys(state.cd)) state.cd[k] = Math.max(0, state.cd[k] - dt);
   if (shootQueued || shootHeld) { shootQueued = false; tryShoot(); }
   if (tagQueued) { tagQueued = false; if (amSeeker && state.phase === 'seek') net.send({ type: 'tag' }); }
   if (flareQueued) { flareQueued = false; if (!me.frozen && !me.dead && state.cd.flare <= 0.05) { net.send({ type: 'flare' }); state.cd.flare = 15; } else sfx.miss(); }
@@ -477,6 +517,21 @@ function frame(nowMs) {
     if (amHider && !me.frozen && !me.dead && state.cd.ink <= 0.05) { net.send({ type: 'ink' }); state.cd.ink = 20; sfx.ink(); }
     else if (amSeeker && state.phase === 'seek' && !me.dead && state.cd.sonar <= 0.05) { net.send({ type: 'sonar' }); state.cd.sonar = 15; }
     else sfx.miss();
+  }
+  if (netQueued) { netQueued = false; if (amSeeker && state.phase === 'seek' && !me.dead && state.cd.net <= 0.05) { tryShoot('net'); state.cd.net = 18; } else sfx.miss(); }
+  if (torpedoQueued) {
+    torpedoQueued = false;
+    if (amSeeker && !me.frozen && !me.dead && state.cd.torpedo <= 0.05) { me.torpedoDir.copy(camForward); me.torpedoUntil = now + 0.8; state.cd.torpedo = 10; sfx.whistle(); }
+    else sfx.miss();
+  }
+  if (whistleQueued) { whistleQueued = false; if (amSeeker && state.phase === 'seek' && !me.dead && state.cd.whistle <= 0.05) { net.send({ type: 'whistle' }); state.cd.whistle = 30; } else sfx.miss(); }
+  if (me.torpedoing && Math.random() < dt * 40) bullets.puff(me.center(new THREE.Vector3()).addScaledVector(camForward, -0.6), 0.5);
+  netMesh.visible = me.tangled;
+  if (netMesh.visible) { netMesh.rotation.x += dt * 2; netMesh.rotation.y += dt * 1.3; }
+  for (const r of remotes.values()) {
+    if (!r.netMesh) { r.netMesh = new THREE.Mesh(netGeo, netMat); r.model.group.add(r.netMesh); }
+    r.netMesh.visible = !!r.tangled;
+    if (r.netMesh.visible) { r.netMesh.rotation.x += dt * 2; r.netMesh.rotation.y += dt * 1.3; }
   }
   updateEffects(dt, now);
   updateAbilityChips();
@@ -514,7 +569,7 @@ function frame(nowMs) {
   }
   if (amSeeker && state.phase === 'seek') {
     if (near <= 2.0) { ui.hint.textContent = 'Press E to TAG!'; ui.hint.classList.add('action'); }
-    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E tag · R sonar · Q flare · Shift sprint burst'; ui.hint.classList.remove('action'); }
+    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E tag · R sonar · T net · G torpedo · V whistle · Q flare'; ui.hint.classList.remove('action'); }
     const showSense = (state.timeLeft <= 30 && other) || (now < state.revealUntil && state.revealPos);
     ui.sense.classList.toggle('show', !!showSense);
     if (showSense) {

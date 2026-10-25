@@ -13,9 +13,12 @@ const SPAWNS = {
   seeker: { x: 0, y: 3, z: 28, yaw: Math.PI },
 };
 const SHARK = {
-  count: 3, hp: 3, wander: 3.4, chase: 6.9, detect: 12, lose: 20, biteRange: 2.1, biteDmg: 20, biteCd: 2.2,
-  respawn: 16, half: 0.7, height: 1.0, accel: 6, calmAfterBite: 4.5, calmAtRoundStart: 9, lureRange: 34, seekerBias: 1.3,
+  count: 4, hp: 5, wander: 3.6, chase: 7.6, detect: 14, lose: 24, biteRange: 2.2, biteDmg: 30, biteCd: 2.0,
+  respawn: 14, half: 0.7, height: 1.0, accel: 7, calmAfterBite: 3.2, calmAtRoundStart: 8, lureRange: 34, seekerBias: 1.3,
+  lungeRange: 6, lungeSpeed: 15, lungeTime: 0.55, lungeCd: 3.5,
 };
+const NET = { tangle: 3.0, cooldown: 18 };
+const WHISTLE = { cooldown: 30, life: 7 };
 const FLARE = { life: 12, cooldown: 15, throwDist: 5 };
 const INK_COOLDOWN = 20;
 const SONAR_COOLDOWN = 15;
@@ -56,7 +59,7 @@ export class GameHost {
     const p = {
       key, id, name: `Fish ${id}`, role: null, pos: { x: 0, y: 1, z: 0 }, yaw: 0, anim: 'idle', wins: 0, ready: false,
       hp: PLAYER_HP, hits: 0, dazedUntil: 0, deadUntil: 0, lastDamage: -99,
-      lastFlare: -99, lastInk: -99, lastSonar: -99, boostUntil: 0,
+      lastFlare: -99, lastInk: -99, lastSonar: -99, lastWhistle: -99, boostUntil: 0, tangledUntil: 0,
     };
     this.players.set(key, p);
     this.deliver(key, { type: 'welcome', id, hideTime: HIDE_TIME, seekTime: SEEK_TIME });
@@ -90,7 +93,7 @@ export class GameHost {
         break;
       case 'shoot':
         if (Array.isArray(msg.o) && Array.isArray(msg.d)) {
-          for (const q of this.players.values()) if (q.key !== key) this.deliver(q.key, { type: 'event', name: 'shot', o: msg.o, d: msg.d, by: p.id, role: p.role });
+          for (const q of this.players.values()) if (q.key !== key) this.deliver(q.key, { type: 'event', name: 'shot', o: msg.o, d: msg.d, by: p.id, role: p.role, weapon: msg.weapon === 'net' ? 'net' : 'gun' });
         }
         break;
       case 'hit':
@@ -108,10 +111,20 @@ export class GameHost {
         break;
       }
       case 'ink':
-        if (p.role !== 'hider' || this.isFrozen(p) || this.isDead(p) || now - p.lastInk < INK_COOLDOWN) break;
+        if (p.role !== 'hider' || this.isFrozen(p) || this.isDead(p) || now - p.lastInk < INK_COOLDOWN || p.tangledUntil > now) break;
         p.lastInk = now;
         this.broadcast({ type: 'event', name: 'inkCloud', pos: { x: p.pos.x, y: p.pos.y + 0.35, z: p.pos.z }, secs: 9, by: p.id });
         break;
+      case 'whistle': {
+        if (p.role !== 'seeker' || this.game.phase !== 'seek' || this.isDead(p) || now - p.lastWhistle < WHISTLE.cooldown) break;
+        const h = this.hider();
+        if (!h) break;
+        p.lastWhistle = now;
+        // an invisible lure at the hider's current spot: LeBron goes to investigate
+        this.flares.push({ id: this.nextFlare++, pos: { x: h.pos.x, y: h.pos.y + 0.35, z: h.pos.z }, until: now + WHISTLE.life, by: p.id, kind: 'whistle' });
+        this.broadcast({ type: 'event', name: 'whistle', by: p.id });
+        break;
+      }
       case 'sonar': {
         if (p.role !== 'seeker' || this.game.phase !== 'seek' || this.isDead(p) || now - p.lastSonar < SONAR_COOLDOWN) break;
         const h = this.hider();
@@ -152,6 +165,12 @@ export class GameHost {
       if (this.game.phase !== 'seek') return;
       const target = [...this.players.values()].find(q => q.id === msg.id);
       if (!target || target === p || this.isDead(target) || dist(target.pos, p.pos) > 50) return;
+      if (msg.weapon === 'net') {
+        if (p.role !== 'seeker' || target.role !== 'hider') return;
+        target.tangledUntil = now + NET.tangle;
+        this.broadcast({ type: 'event', name: 'tangled', victim: target.id, by: p.id, secs: NET.tangle });
+        return;
+      }
       if (p.role === 'seeker' && target.role === 'hider') {
         target.hits += 1;
         this.broadcast({ type: 'event', name: 'playerHit', victim: target.id, by: p.id, hits: target.hits });
@@ -234,9 +253,10 @@ export class GameHost {
           if (d < limit && score < best) { best = score; target = p; }
         }
       }
-      // flares are irresistible
+      // flares are irresistible; a whistle lure only pulls him until he spots prey nearby
       let lure = null, lureD = SHARK.lureRange;
       for (const f of this.flares) { const d = dist(center, f.pos); if (d < lureD) { lureD = d; lure = f; } }
+      if (lure && lure.kind === 'whistle' && target && dist(center, { x: target.pos.x, y: target.pos.y, z: target.pos.z }) < SHARK.detect) lure = null;
       if (lure) target = null;
       s.targetKey = target ? target.key : null;
       s.state = target || lure ? 'chase' : 'wander';
@@ -250,6 +270,10 @@ export class GameHost {
         goal = { x: target.pos.x, y: target.pos.y + 0.35, z: target.pos.z };
         speed = SHARK.chase;
         const d = dist(center, goal);
+        // chase-down lunge when close
+        s.lungeCd = Math.max(0, (s.lungeCd || 0) - dt);
+        if (d < SHARK.lungeRange && d > SHARK.biteRange && s.lungeCd <= 0 && s.biteCd <= 0) { s.lungeUntil = now + SHARK.lungeTime; s.lungeCd = SHARK.lungeCd; this.broadcast({ type: 'event', name: 'lunge', id: s.id, victim: target.id }); }
+        if (s.lungeUntil > now) speed = SHARK.lungeSpeed;
         if (d <= SHARK.biteRange && s.biteCd <= 0) {
           this.damagePlayer(target, SHARK.biteDmg, 'shark');
           s.biteCd = SHARK.biteCd;
@@ -269,9 +293,10 @@ export class GameHost {
       const dx = goal.x - center.x, dy = goal.y - center.y, dz = goal.z - center.z;
       const len = Math.hypot(dx, dy, dz) || 1;
       const tv = { x: dx / len * speed, y: dy / len * speed, z: dz / len * speed };
-      s.vel.x = approach(s.vel.x, tv.x, SHARK.accel * dt);
-      s.vel.y = approach(s.vel.y, tv.y, SHARK.accel * dt);
-      s.vel.z = approach(s.vel.z, tv.z, SHARK.accel * dt);
+      const acc = (s.lungeUntil > now ? SHARK.accel * 5 : SHARK.accel) * dt;
+      s.vel.x = approach(s.vel.x, tv.x, acc);
+      s.vel.y = approach(s.vel.y, tv.y, acc);
+      s.vel.z = approach(s.vel.z, tv.z, acc);
 
       // integrate as a box whose bottom is below the center
       const box = { x: s.pos.x, y: s.pos.y - SHARK.height / 2, z: s.pos.z };
@@ -301,14 +326,14 @@ export class GameHost {
       type: 'state', phase: g.phase, timeLeft: Math.ceil(g.timeLeft), round: g.round, lastResult: g.lastResult,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, role: p.role, pos: p.pos, yaw: p.yaw, anim: p.anim, wins: p.wins,
-        hp: Math.round(p.hp), hits: p.hits, dazed: p.dazedUntil > now, dead: p.deadUntil > now, boost: p.boostUntil > now,
-        cd: { flare: Math.max(0, FLARE.cooldown - (now - p.lastFlare)), ink: Math.max(0, INK_COOLDOWN - (now - p.lastInk)), sonar: Math.max(0, SONAR_COOLDOWN - (now - p.lastSonar)) },
+        hp: Math.round(p.hp), hits: p.hits, dazed: p.dazedUntil > now, dead: p.deadUntil > now, boost: p.boostUntil > now, tangled: p.tangledUntil > now,
+        cd: { flare: Math.max(0, FLARE.cooldown - (now - p.lastFlare)), ink: Math.max(0, INK_COOLDOWN - (now - p.lastInk)), sonar: Math.max(0, SONAR_COOLDOWN - (now - p.lastSonar)), whistle: Math.max(0, WHISTLE.cooldown - (now - p.lastWhistle)) },
       })),
       sharks: this.sharks.map(s => ({
         id: s.id, pos: s.pos, yaw: s.yaw, state: s.state, hp: s.hp, tgt: s.targetKey ? this.players.get(s.targetKey)?.id ?? null : null,
-        biting: s.biteAnimUntil > now, lured: !!s.lured,
+        biting: s.biteAnimUntil > now || s.lungeUntil > now, lured: !!s.lured,
       })),
-      flares: this.flares.map(f => ({ id: f.id, pos: f.pos, left: Math.max(0, f.until - now) })),
+      flares: this.flares.map(f => ({ id: f.id, pos: f.pos, left: Math.max(0, f.until - now), kind: f.kind || 'flare' })),
       pearls: this.pearls.map(q => ({ id: q.id, pos: q.pos, active: q.active })),
     };
   }
@@ -321,6 +346,7 @@ export class GameHost {
     p.hits = 0;
     p.dazedUntil = 0;
     p.deadUntil = 0;
+    p.tangledUntil = 0;
     this.deliver(p.key, { type: 'teleport', pos: p.pos, yaw: p.yaw });
   }
 
