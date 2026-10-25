@@ -38,6 +38,9 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #4be08a, #2fb3a8); transition: width 0.2s; border-radius: 999px; }
 #health-bar.low { background: linear-gradient(90deg, #f06a4a, #e2563f); }
 #health-text { position: absolute; inset: 0; text-align: center; font-size: 14px; font-weight: 700; color: #fff; line-height: 22px; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+#stamina { width: 200px; height: 8px; border-radius: 999px; background: rgba(0, 20, 40, 0.45); overflow: hidden; margin-top: -4px; }
+#stamina-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #ffd166, #f8a35d); border-radius: 999px; transition: width 0.08s linear; }
+#stamina-bar.exhausted { background: #e2563f; }
 #hint { font-size: 14px; font-weight: 600; opacity: 0.85; padding: 8px 16px; white-space: nowrap; }
 #hint.action { background: var(--orange); color: #fff; font-size: 20px; opacity: 1; animation: pulse 0.6s infinite; }
 #danger { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(242, 110, 60, 0.7) 100%); transition: opacity 0.2s; }

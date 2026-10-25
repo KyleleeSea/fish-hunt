@@ -31,7 +31,7 @@ const ui = {
   hud: $('hud'), role: $('role-badge'), timer: $('timer'), score: $('score'), phase: $('phase-label'),
   center: $('center-msg'), sub: $('sub-msg'), hint: $('hint'), danger: $('danger'), hurt: $('hurt'), ink: $('ink'), crosshair: $('crosshair'),
   sense: $('sense'), senseArrow: $('sense-arrow'), senseText: $('sense-text'), sharkWarn: $('shark-warn'),
-  health: $('health-bar'), healthText: $('health-text'), eaten: $('eaten'), hitmark: $('hitmark'),
+  health: $('health-bar'), healthText: $('health-text'), eaten: $('eaten'), hitmark: $('hitmark'), staminaBar: $('stamina-bar'),
   chipFlare: $('chip-flare'), chipSpecial: $('chip-special'),
   blindfold: $('blindfold'), blindCount: $('blind-count'),
   lobby: $('lobby'), joinForm: $('join-form'), lobbyStatus: $('lobby-status'), statusText: $('status-text'),
@@ -480,6 +480,8 @@ function frame(nowMs) {
   }
   updateEffects(dt, now);
   updateAbilityChips();
+  ui.staminaBar.style.width = `${Math.round(me.stamina * 100)}%`;
+  ui.staminaBar.classList.toggle('exhausted', me.exhausted);
 
   // bullets: own-shot targets are sharks and the other fish
   const targets = [];
@@ -512,7 +514,7 @@ function frame(nowMs) {
   }
   if (amSeeker && state.phase === 'seek') {
     if (near <= 2.0) { ui.hint.textContent = 'Press E to TAG!'; ui.hint.classList.add('action'); }
-    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E tag · R sonar · Q flare · Shift dash'; ui.hint.classList.remove('action'); }
+    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E tag · R sonar · Q flare · Shift sprint burst'; ui.hint.classList.remove('action'); }
     const showSense = (state.timeLeft <= 30 && other) || (now < state.revealUntil && state.revealPos);
     ui.sense.classList.toggle('show', !!showSense);
     if (showSense) {
@@ -523,9 +525,9 @@ function frame(nowMs) {
     }
   } else {
     ui.sense.classList.remove('show');
-    if (amHider && state.phase === 'hide') ui.hint.textContent = 'Hide! Kelp, caves, pipes, clams, the wreck… Space/C up/down · Shift dash';
+    if (amHider && state.phase === 'hide') ui.hint.textContent = 'Hide! Kelp, caves, pipes, clams, the wreck… Space/C up/down · Shift sprint burst';
     else if (amHider && state.phase === 'seek') ui.hint.textContent = 'Stay hidden! R ink cloud · Q flare lures LeBron · your shots ink the seeker · 3 hits = caught';
-    else { ui.hint.textContent = 'WASD swim · Space up · C down · Shift dash · Click to shoot · E to tag'; }
+    else { ui.hint.textContent = 'WASD swim · Space up · C down · Shift sprint burst · Click to shoot · E to tag'; }
     ui.hint.classList.remove('action');
   }
 

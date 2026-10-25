@@ -31,7 +31,7 @@ Meanwhile three **LeBrons** swim laps around the reef and dunk on any fish they 
 | Left click / F | shoot (over-the-shoulder crosshair, turns red on a target) |
 | Q | flare |
 | R | ink cloud (hider) / sonar ping (seeker) |
-| Shift | dash |
+| Shift | sprint burst (about 1.5 s at nearly double speed, refills in 4 s) |
 | E | tag the hider (seeker, within reach) |
 | Scroll | zoom camera |
 

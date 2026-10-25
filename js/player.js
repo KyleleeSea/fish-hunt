@@ -4,6 +4,8 @@ import { sweep, lerpAngle } from './physics.js';
 
 export const PLAYER_HALF = 0.4;
 export const PLAYER_HEIGHT = 0.7;
+const SPRINT_TIME = 1.5;
+const SPRINT_REFILL = 4;
 
 export class LocalPlayer {
   constructor(fish, colliders) {
@@ -21,6 +23,9 @@ export class LocalPlayer {
     this.anim = 'idle';
     this._wish = new THREE.Vector3();
     this._delta = new THREE.Vector3();
+    this.stamina = 1;        // 0..1, drained by sprinting
+    this.exhausted = false;  // after running dry, wait for a partial refill
+    this.sprinting = false;
   }
 
   /** World-space center of the fish. */
@@ -52,7 +57,17 @@ export class LocalPlayer {
       wish.y += input.up - input.down;
       if (wish.lengthSq() > 1) wish.normalize();
     }
-    let maxSpeed = this.baseSpeed * (input.sprint && canMove ? 1.5 : 1);
+    // short sprint burst: ~1.5 s of boost, ~4 s to refill
+    const wantsSprint = input.sprint && canMove && wish.lengthSq() > 0;
+    if (this.exhausted && this.stamina > 0.35) this.exhausted = false;
+    this.sprinting = wantsSprint && !this.exhausted && this.stamina > 0;
+    if (this.sprinting) {
+      this.stamina = Math.max(0, this.stamina - dt / SPRINT_TIME);
+      if (this.stamina <= 0) this.exhausted = true;
+    } else {
+      this.stamina = Math.min(1, this.stamina + dt / SPRINT_REFILL);
+    }
+    let maxSpeed = this.baseSpeed * (this.sprinting ? 1.9 : 1);
     if (this.dazed) maxSpeed *= 0.45;
 
     const accel = wish.lengthSq() > 0 ? 22 : 12; // water drag when coasting
