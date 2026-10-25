@@ -1,4 +1,4 @@
-# 🐟 Fish Hunt
+# 🐟 Fish Game
 
 A two-player 3D hide-and-seek game set in a pastel coral reef, with guns, bullets, flares, ink clouds, sonar, and LeBron James patrolling the reef. Peer-to-peer, no server, runs on GitHub Pages.
 
