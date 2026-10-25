@@ -14,7 +14,7 @@ const SPAWNS = {
 };
 const SHARK = {
   count: 3, hp: 3, wander: 3.4, chase: 6.9, detect: 12, lose: 20, biteRange: 2.1, biteDmg: 20, biteCd: 2.2,
-  respawn: 16, half: 0.7, height: 1.0, accel: 6, calmAfterBite: 4.5, calmAtRoundStart: 9, lureRange: 34,
+  respawn: 16, half: 0.7, height: 1.0, accel: 6, calmAfterBite: 4.5, calmAtRoundStart: 9, lureRange: 34, seekerBias: 1.3,
 };
 const FLARE = { life: 12, cooldown: 15, throwDist: 5 };
 const INK_COOLDOWN = 20;
@@ -226,8 +226,12 @@ export class GameHost {
         for (const p of prey) {
           const c = { x: p.pos.x, y: p.pos.y + 0.35, z: p.pos.z };
           const d = dist(center, c);
-          const limit = s.targetKey === p.key ? SHARK.lose : SHARK.detect;
-          if (d < limit && d < best) { best = d; target = p; }
+          // LeBron has a mild grudge against the seeker: spots them from a little
+          // farther away and prefers them when both fish are about as close
+          const bias = p.role === 'seeker' ? SHARK.seekerBias : 1;
+          const limit = (s.targetKey === p.key ? SHARK.lose : SHARK.detect) * bias;
+          const score = d / bias;
+          if (d < limit && score < best) { best = score; target = p; }
         }
       }
       // flares are irresistible

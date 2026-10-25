@@ -10,7 +10,7 @@ A two-player 3D hide-and-seek game set in a pastel coral reef, with guns, bullet
 2. **Seek** (100 s) — the seeker hunts. Land **3 shots** on the hider or tag them with **E** to win the round. In the last 30 seconds the seeker gets a sense arrow toward the hider.
 3. Roles swap and the score carries over.
 
-Meanwhile three **LeBrons** swim laps around the reef and dunk on any fish they spot. A dunk takes 20 health; at 0 you are posterized and respawn at your start (and if you were the hider, the seeker gets pointed at you). Three bullets send a LeBron to the bench, and he respawns elsewhere later. The hider's shots **ink** the seeker's view and slow them for a moment.
+Meanwhile three **LeBrons** swim laps around the reef and dunk on any fish they spot. A dunk takes 20 health; at 0 you are posterized and respawn at your start (and if you were the hider, the seeker gets pointed at you). Three bullets send a LeBron to the bench, and he respawns elsewhere later. The hider's shots **ink** the seeker's view and slow them for a moment. The seeker's gun fires slower than the hider's, and LeBron holds a mild grudge: he spots the seeker from a little farther away and prefers them when both fish are about as close.
 
 ## Abilities and pickups
 

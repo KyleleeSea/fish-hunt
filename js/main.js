@@ -418,7 +418,8 @@ let fireCd = 0;
 const aimPoint = new THREE.Vector3(), muzzle = new THREE.Vector3(), shotDir = new THREE.Vector3();
 function tryShoot() {
   if (fireCd > 0 || me.frozen || me.dead || !state.joined) return;
-  fireCd = 0.22;
+  // the seeker's gun is heavier: fewer shots per second than the hider's
+  fireCd = state.role === 'seeker' ? 0.6 : 0.22;
   // aim at whatever the crosshair is on
   let t = 70;
   for (const b of colliders) { const h = rayBox(camera.position, camForward, b); if (h < t && h > cam.curDist) t = h; }
