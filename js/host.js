@@ -3,7 +3,7 @@
 //   host -> player : welcome, state, teleport, event {name,...}, full
 import { sweep, lerpAngle } from './physics.js';
 
-export const HIDE_TIME = 30;
+export const HIDE_TIME = 10;
 export const SEEK_TIME = 100;
 export const RESULT_TIME = 6;
 export const TAG_RANGE = 2.0;
@@ -14,8 +14,13 @@ const SPAWNS = {
 };
 const SHARK = {
   count: 3, hp: 3, wander: 3.4, chase: 6.9, detect: 12, lose: 20, biteRange: 2.1, biteDmg: 20, biteCd: 2.2,
-  respawn: 16, half: 0.9, height: 1.2, accel: 6, calmAfterBite: 4.5, calmAtRoundStart: 9,
+  respawn: 16, half: 0.7, height: 1.0, accel: 6, calmAfterBite: 4.5, calmAtRoundStart: 9, lureRange: 34,
 };
+const FLARE = { life: 12, cooldown: 15, throwDist: 5 };
+const INK_COOLDOWN = 20;
+const SONAR_COOLDOWN = 15;
+const PEARL_SPOTS = [[-8, 1.2, -20], [22, 3, -8], [-26, 2, 24], [4, 8, 14], [14, 1.5, 26], [-4, 13, -4], [26, 2, 26], [-22, 5, -26]];
+const PEARL = { radius: 1.4, heal: 50, boost: 6, respawn: 30 };
 const PLAYER_HP = 100;
 const DEATH_TIME = 3.5;
 
@@ -32,6 +37,9 @@ export class GameHost {
     this.game = { phase: 'lobby', timeLeft: 0, round: 0, lastResult: null };
     this.sharks = [];
     for (let i = 0; i < SHARK.count; i++) this.sharks.push(this.makeShark(i + 1));
+    this.flares = [];
+    this.nextFlare = 1;
+    this.pearls = PEARL_SPOTS.map(([x, y, z], i) => ({ id: i + 1, pos: { x, y, z }, active: true, respawnAt: 0 }));
     this.last = performance.now();
     this.acc = 0;
     this.timer = setInterval(() => this.tick(), 1000 / 60);
@@ -48,6 +56,7 @@ export class GameHost {
     const p = {
       key, id, name: `Fish ${id}`, role: null, pos: { x: 0, y: 1, z: 0 }, yaw: 0, anim: 'idle', wins: 0, ready: false,
       hp: PLAYER_HP, hits: 0, dazedUntil: 0, deadUntil: 0, lastDamage: -99,
+      lastFlare: -99, lastInk: -99, lastSonar: -99, boostUntil: 0,
     };
     this.players.set(key, p);
     this.deliver(key, { type: 'welcome', id, hideTime: HIDE_TIME, seekTime: SEEK_TIME });
@@ -87,6 +96,31 @@ export class GameHost {
       case 'hit':
         this.onHit(p, msg);
         break;
+      case 'flare': {
+        if (this.isFrozen(p) || this.isDead(p) || now - p.lastFlare < FLARE.cooldown) break;
+        p.lastFlare = now;
+        let pos = { x: p.pos.x + Math.sin(p.yaw) * FLARE.throwDist, y: 0.35, z: p.pos.z + Math.cos(p.yaw) * FLARE.throwDist };
+        pos.x = Math.max(-32, Math.min(32, pos.x)); pos.z = Math.max(-32, Math.min(32, pos.z));
+        if (this.colliders.some(c => pos.x > c.min.x && pos.x < c.max.x && pos.y > c.min.y && pos.y < c.max.y && pos.z > c.min.z && pos.z < c.max.z)) pos = { x: p.pos.x, y: Math.max(0.35, p.pos.y), z: p.pos.z };
+        const f = { id: this.nextFlare++, pos, until: now + FLARE.life, by: p.id };
+        this.flares.push(f);
+        this.broadcast({ type: 'event', name: 'flare', id: f.id, pos, from: p.pos, by: p.id });
+        break;
+      }
+      case 'ink':
+        if (p.role !== 'hider' || this.isFrozen(p) || this.isDead(p) || now - p.lastInk < INK_COOLDOWN) break;
+        p.lastInk = now;
+        this.broadcast({ type: 'event', name: 'inkCloud', pos: { x: p.pos.x, y: p.pos.y + 0.35, z: p.pos.z }, secs: 9, by: p.id });
+        break;
+      case 'sonar': {
+        if (p.role !== 'seeker' || this.game.phase !== 'seek' || this.isDead(p) || now - p.lastSonar < SONAR_COOLDOWN) break;
+        const h = this.hider();
+        if (!h) break;
+        p.lastSonar = now;
+        this.deliver(key, { type: 'event', name: 'sonar', pos: h.pos, dist: Math.round(dist(h.pos, p.pos)) });
+        this.deliver(h.key, { type: 'event', name: 'pinged' });
+        break;
+      }
       case 'tag': {
         if (this.game.phase !== 'seek' || p.role !== 'seeker') break;
         const h = this.hider();
@@ -196,11 +230,19 @@ export class GameHost {
           if (d < limit && d < best) { best = d; target = p; }
         }
       }
+      // flares are irresistible
+      let lure = null, lureD = SHARK.lureRange;
+      for (const f of this.flares) { const d = dist(center, f.pos); if (d < lureD) { lureD = d; lure = f; } }
+      if (lure) target = null;
       s.targetKey = target ? target.key : null;
-      s.state = target ? 'chase' : 'wander';
+      s.state = target || lure ? 'chase' : 'wander';
+      s.lured = !!lure;
 
       let goal, speed;
-      if (target) {
+      if (lure) {
+        goal = { x: lure.pos.x, y: lure.pos.y + 1.2, z: lure.pos.z };
+        speed = lureD < 2.5 ? 1.2 : SHARK.chase;
+      } else if (target) {
         goal = { x: target.pos.x, y: target.pos.y + 0.35, z: target.pos.z };
         speed = SHARK.chase;
         const d = dist(center, goal);
@@ -255,12 +297,15 @@ export class GameHost {
       type: 'state', phase: g.phase, timeLeft: Math.ceil(g.timeLeft), round: g.round, lastResult: g.lastResult,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, role: p.role, pos: p.pos, yaw: p.yaw, anim: p.anim, wins: p.wins,
-        hp: Math.round(p.hp), hits: p.hits, dazed: p.dazedUntil > now, dead: p.deadUntil > now,
+        hp: Math.round(p.hp), hits: p.hits, dazed: p.dazedUntil > now, dead: p.deadUntil > now, boost: p.boostUntil > now,
+        cd: { flare: Math.max(0, FLARE.cooldown - (now - p.lastFlare)), ink: Math.max(0, INK_COOLDOWN - (now - p.lastInk)), sonar: Math.max(0, SONAR_COOLDOWN - (now - p.lastSonar)) },
       })),
       sharks: this.sharks.map(s => ({
         id: s.id, pos: s.pos, yaw: s.yaw, state: s.state, hp: s.hp, tgt: s.targetKey ? this.players.get(s.targetKey)?.id ?? null : null,
-        biting: s.biteAnimUntil > now,
+        biting: s.biteAnimUntil > now, lured: !!s.lured,
       })),
+      flares: this.flares.map(f => ({ id: f.id, pos: f.pos, left: Math.max(0, f.until - now) })),
+      pearls: this.pearls.map(q => ({ id: q.id, pos: q.pos, active: q.active })),
     };
   }
 
@@ -342,6 +387,24 @@ export class GameHost {
         this.broadcast({ type: 'event', name: 'respawn', id: p.id });
       } else if (p.hp > 0 && p.hp < PLAYER_HP && now - p.lastDamage > 4) {
         p.hp = Math.min(PLAYER_HP, p.hp + 10 * dt);
+      }
+    }
+
+    // flares burn out
+    this.flares = this.flares.filter(f => f.until > now);
+
+    // pearls: heal + speed boost
+    for (const q of this.pearls) {
+      if (!q.active) { if (now >= q.respawnAt) q.active = true; continue; }
+      for (const p of this.players.values()) {
+        if (this.isDead(p) || this.isFrozen(p)) continue;
+        if (dist({ x: p.pos.x, y: p.pos.y + 0.35, z: p.pos.z }, q.pos) <= PEARL.radius) {
+          q.active = false; q.respawnAt = now + PEARL.respawn;
+          p.hp = Math.min(PLAYER_HP, p.hp + PEARL.heal);
+          p.boostUntil = now + PEARL.boost;
+          this.broadcast({ type: 'event', name: 'pearl', id: q.id, by: p.id });
+          break;
+        }
       }
     }
 

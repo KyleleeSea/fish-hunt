@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildWorld, updateWorld } from './world.js';
 import { Fish } from './fish.js';
-import { Shark } from './shark.js';
+import { LeBron } from './lebron.js';
 import { LocalPlayer, RemoteActor, PLAYER_HEIGHT } from './player.js';
 import { BulletSystem } from './bullets.js';
 import { P2P, randomCode } from './net.js';
@@ -31,7 +31,8 @@ const ui = {
   hud: $('hud'), role: $('role-badge'), timer: $('timer'), score: $('score'), phase: $('phase-label'),
   center: $('center-msg'), sub: $('sub-msg'), hint: $('hint'), danger: $('danger'), hurt: $('hurt'), ink: $('ink'), crosshair: $('crosshair'),
   sense: $('sense'), senseArrow: $('sense-arrow'), senseText: $('sense-text'), sharkWarn: $('shark-warn'),
-  health: $('health-bar'), healthText: $('health-text'), eaten: $('eaten'),
+  health: $('health-bar'), healthText: $('health-text'), eaten: $('eaten'), hitmark: $('hitmark'),
+  chipFlare: $('chip-flare'), chipSpecial: $('chip-special'),
   blindfold: $('blindfold'), blindCount: $('blind-count'),
   lobby: $('lobby'), joinForm: $('join-form'), lobbyStatus: $('lobby-status'), statusText: $('status-text'),
   name: $('name'), code: $('code'), join: $('join'), host: $('host'), formError: $('form-error'),
@@ -47,13 +48,15 @@ function banner(text, sub = '', secs = 3) {
 
 // ---- Input ---------------------------------------------------------------
 const keys = new Set();
-let tagQueued = false, shootHeld = false, shootQueued = false;
+let tagQueued = false, shootHeld = false, shootQueued = false, flareQueued = false, specialQueued = false;
 addEventListener('keydown', (e) => {
   if (e.target === ui.name || e.target === ui.code) return;
   keys.add(e.code);
   if (e.code === 'Space' || e.code === 'KeyC') e.preventDefault();
   if (e.code === 'KeyE') tagQueued = true;
   if (e.code === 'KeyF') shootQueued = true;
+  if (e.code === 'KeyQ') flareQueued = true;
+  if (e.code === 'KeyR') specialQueued = true;
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); shootHeld = false; });
@@ -83,12 +86,14 @@ const sharks = new Map();
 
 const state = {
   myId: null, phase: 'lobby', timeLeft: 0, round: 0, role: null, wins: 0, hp: 100, hits: 0, dazed: false, dead: false,
-  hideTime: 30, seekTime: 100, joined: false, lastTick: -1, otherName: '', revealUntil: 0, revealPos: null, inkUntil: 0,
+  hideTime: 10, seekTime: 100, joined: false, lastTick: -1, otherName: '', revealUntil: 0, revealPos: null, revealText: '', inkUntil: 0,
+  boost: false, cd: { flare: 0, ink: 0, sonar: 0 }, flares: [], pearls: [],
 };
 
 const bullets = new BulletSystem(scene, colliders, (kind, id) => {
   net.send({ type: 'hit', kind, id });
   sfx.hit();
+  ui.hitmark.classList.remove('show'); void ui.hitmark.offsetWidth; ui.hitmark.classList.add('show');
 });
 
 // ---- Networking ----------------------------------------------------------
@@ -122,7 +127,7 @@ function applyState(s) {
     seen.add(p.id);
     if (p.id === state.myId) {
       if (state.role !== p.role) { state.role = p.role; myFish.setRole(p.role); }
-      state.wins = p.wins; state.hp = p.hp; state.hits = p.hits; state.dazed = p.dazed; state.dead = p.dead;
+      state.wins = p.wins; state.hp = p.hp; state.hits = p.hits; state.dazed = p.dazed; state.dead = p.dead; state.boost = !!p.boost; if (p.cd) state.cd = p.cd;
       continue;
     }
     let r = remotes.get(p.id);
@@ -138,11 +143,14 @@ function applyState(s) {
   for (const sh of s.sharks || []) {
     seenSharks.add(sh.id);
     let r = sharks.get(sh.id);
-    if (!r) { const m = new Shark(); scene.add(m.group); r = new RemoteActor(m, 0); sharks.set(sh.id, r); }
+    if (!r) { const m = new LeBron(); scene.add(m.group); r = new RemoteActor(m, 0); sharks.set(sh.id, r); }
     r.setTarget(sh.pos, sh.yaw, sh.state, { dead: sh.state === 'dead', biting: sh.biting });
-    r.id = sh.id; r.state = sh.state; r.tgt = sh.tgt; r.hp = sh.hp;
+    r.id = sh.id; r.state = sh.state; r.tgt = sh.tgt; r.hp = sh.hp; r.lured = sh.lured;
   }
   for (const [id, r] of sharks) if (!seenSharks.has(id)) { scene.remove(r.model.group); sharks.delete(id); }
+  state.flares = s.flares || [];
+  state.pearls = s.pearls || [];
+  syncFlares(); syncPearls();
 
   if (prevPhase !== s.phase) onPhaseChange(prevPhase, s.phase, s);
   updateHud();
@@ -163,7 +171,7 @@ function onPhaseChange(prev, phase, s) {
       break;
     case 'hide':
       ui.lobby.classList.add('hidden'); ui.hud.classList.remove('hidden');
-      if (amHider) { banner('You\'re the HIDER! 🐠', 'Vanish into the reef before the seeker opens their eyes. Watch for sharks!', 4); sfx.bubble(); }
+      if (amHider) { banner('You\'re the HIDER! 🐠', '10 seconds! Vanish into the reef. Watch out for LeBron!', 3); sfx.bubble(); }
       else { ui.blindfold.classList.remove('hidden'); sfx.thump(); }
       break;
     case 'seek':
@@ -192,7 +200,14 @@ function onEvent(e) {
       break;
     }
     case 'sharkHit': { const s = sharks.get(e.id); if (s) s.model.hitFlash(); break; }
-    case 'sharkDied': { sfx.sharkDie(); if (e.by === state.myId) banner('SHARK DOWN! 🦈', 'It will be back…', 2); break; }
+    case 'sharkDied': { sfx.sharkDie(); if (e.by === state.myId) banner('LEBRON DOWN! 🏀', 'He\'ll be back for the fourth quarter…', 2); break; }
+    case 'flare': { sfx.bubble(); if (e.by !== state.myId) banner('', `${state.otherName} threw a flare 🔥`, 1.5); break; }
+    case 'inkCloud': spawnInk(e.pos, e.secs, e.by === state.myId); if (e.by !== state.myId) sfx.ink(); break;
+    case 'sonar': state.revealUntil = now + 2.5; state.revealPos = e.pos; state.revealText = `Sonar: hider ${e.dist} m away`; sfx.tick(); break;
+    case 'pinged': banner('PING! 📡', 'The seeker just scanned for you — move!', 2); sfx.tick(); break;
+    case 'pearl':
+      if (e.by === state.myId) { banner('PEARL! 🫧', '+50 health and a speed boost!', 2); sfx.win(); }
+      break;
     case 'bite': { const s = sharks.get(e.id); if (e.victim === state.myId) { sfx.chomp(); } break; }
     case 'hurt':
       if (e.victim === state.myId) { ui.hurt.style.opacity = 1; myFish.hurtFlash(); sfx.hurt(); state.hp = e.hp; }
@@ -200,13 +215,13 @@ function onEvent(e) {
       break;
     case 'eaten':
       if (e.victim === state.myId) { ui.eaten.classList.remove('hidden'); sfx.roar(); }
-      else banner(`${state.otherName} got eaten! 🦈`, state.role === 'seeker' ? 'They respawn at their start — go!' : 'Serves them right.', 3);
+      else banner(`${state.otherName} got dunked on! 🏀`, state.role === 'seeker' ? 'They respawn at their start — go!' : 'Serves them right.', 3);
       break;
     case 'respawn':
       if (e.id === state.myId) ui.eaten.classList.add('hidden');
       break;
     case 'reveal':
-      state.revealUntil = now + (e.secs || 6); state.revealPos = e.pos; break;
+      state.revealUntil = now + (e.secs || 6); state.revealPos = e.pos; state.revealText = 'The hider respawned over there!'; break;
     case 'playerHit':
       if (e.victim === state.myId) { ui.hurt.style.opacity = 1; myFish.hurtFlash(); sfx.hurt(); banner(`HIT! ${e.hits}/${HITS_TO_CATCH}`, 'Move! One more and you\'re caught.'.replace('One more', e.hits === HITS_TO_CATCH - 1 ? 'One more' : `${HITS_TO_CATCH - e.hits} more`), 1.5); }
       else { const r = remotes.get(e.victim); if (r) r.model.hurtFlash(); banner(`HIT ${e.hits}/${HITS_TO_CATCH}!`, '', 1.2); }
@@ -287,8 +302,11 @@ function updateHud() {
 
 // ---- Camera --------------------------------------------------------------
 const camTarget = new THREE.Vector3(), camDir = new THREE.Vector3(), camForward = new THREE.Vector3(), camRight = new THREE.Vector3(), camFlat = new THREE.Vector3();
+const SHOULDER = new THREE.Vector3();
 function updateCamera(dt) {
-  me.center(camTarget);
+  camRight.set(Math.cos(cam.theta), 0, -Math.sin(cam.theta));
+  // over-the-shoulder: look past the fish so it never sits under the crosshair
+  me.center(camTarget).addScaledVector(camRight, 1.1).add(SHOULDER.set(0, 0.45, 0));
   const cp = Math.cos(cam.pitch);
   camDir.set(Math.sin(cam.theta) * cp, Math.sin(cam.pitch), Math.cos(cam.theta) * cp);
   let dist = cam.dist;
@@ -300,7 +318,6 @@ function updateCamera(dt) {
   camera.lookAt(camTarget);
   camForward.copy(camDir).negate();
   camFlat.set(-Math.sin(cam.theta), 0, -Math.cos(cam.theta));
-  camRight.set(Math.cos(cam.theta), 0, -Math.sin(cam.theta));
   myFish.root.visible = cam.curDist > 1.0;
   for (const v of hideVolumes) {
     const inside = pointInBox(camTarget, v.box) || pointInBox(camera.position, v.box);
@@ -308,6 +325,93 @@ function updateCamera(dt) {
   }
 }
 function pointInBox(p, b) { return p.x > b.min.x && p.x < b.max.x && p.y > b.min.y && p.y < b.max.y && p.z > b.min.z && p.z < b.max.z; }
+
+// ---- Effects: flares, pearls, ink clouds ---------------------------------
+const flareMeshes = new Map();
+const flareGeo = new THREE.SphereGeometry(0.22, 10, 8);
+function syncFlares() {
+  const seen = new Set();
+  for (const f of state.flares) {
+    seen.add(f.id);
+    let m = flareMeshes.get(f.id);
+    if (!m) {
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(flareGeo, new THREE.MeshBasicMaterial({ color: 0xffe3b0 }));
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff5a2a, transparent: true, opacity: 0.35, depthWrite: false }));
+      const light = new THREE.PointLight(0xff6a30, 60, 18, 1.6);
+      light.position.y = 0.4;
+      g.add(core, glow, light);
+      g.position.set(f.pos.x, f.pos.y, f.pos.z);
+      scene.add(g);
+      m = { g, glow, light, t: Math.random() * 10 };
+      flareMeshes.set(f.id, m);
+    }
+    m.left = f.left;
+  }
+  for (const [id, m] of flareMeshes) if (!seen.has(id)) { scene.remove(m.g); flareMeshes.delete(id); }
+}
+const pearlMeshes = new Map();
+function syncPearls() {
+  for (const q of state.pearls) {
+    let m = pearlMeshes.get(q.id);
+    if (!m) {
+      const g = new THREE.Group();
+      const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x9fdcff, emissiveIntensity: 0.8, roughness: 0.2 }));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.04, 6, 24), new THREE.MeshBasicMaterial({ color: 0xbfeeff, transparent: true, opacity: 0.7 }));
+      const light = new THREE.PointLight(0x9fdcff, 25, 10, 1.8);
+      g.add(pearl, ring, light);
+      g.position.set(q.pos.x, q.pos.y, q.pos.z);
+      scene.add(g);
+      m = { g, ring, t: Math.random() * 10 };
+      pearlMeshes.set(q.id, m);
+    }
+    m.g.visible = q.active;
+  }
+}
+const inks = [];
+function spawnInk(pos, secs, mine = false) {
+  // your own cloud stays see-through for you; everyone else sees a solid black blob
+  const m = new THREE.Mesh(new THREE.SphereGeometry(4.5, 18, 14), new THREE.MeshBasicMaterial({ color: 0x07071a, transparent: true, opacity: mine ? 0.3 : 0.92, depthWrite: false, side: THREE.FrontSide }));
+  m.position.set(pos.x, pos.y, pos.z);
+  m.scale.setScalar(0.2);
+  scene.add(m);
+  inks.push({ m, life: secs, total: secs, max: mine ? 0.3 : 0.92 });
+}
+function updateEffects(dt, now) {
+  for (const m of flareMeshes.values()) {
+    m.t += dt;
+    const flicker = 0.8 + Math.sin(m.t * 23) * 0.15 + Math.sin(m.t * 7) * 0.1;
+    m.light.intensity = 60 * flicker * Math.min(1, (m.left ?? 1) / 2);
+    m.glow.scale.setScalar(flicker * (0.9 + Math.sin(m.t * 3) * 0.1));
+    if (Math.random() < dt * 12) bullets.puff(m.g.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.5, (Math.random() - 0.5) * 0.4)), 0.4);
+  }
+  for (const m of pearlMeshes.values()) {
+    m.t += dt;
+    m.g.position.y += Math.sin(m.t * 1.5) * dt * 0.25;
+    m.ring.rotation.x = m.t * 0.8; m.ring.rotation.y = m.t * 0.5;
+  }
+  for (let i = inks.length - 1; i >= 0; i--) {
+    const k = inks[i];
+    k.life -= dt;
+    const grow = Math.min(1, (k.total - k.life) / 0.6);
+    k.m.scale.setScalar(0.2 + grow * 0.8 + Math.sin(now * 2) * 0.03);
+    k.m.material.opacity = k.max * Math.min(1, k.life / 1.5);
+    if (k.life <= 0) { scene.remove(k.m); inks.splice(i, 1); }
+  }
+}
+function updateAbilityChips() {
+  const amHider = state.role === 'hider';
+  const specialName = amHider ? 'Ink' : 'Sonar';
+  const specialCd = amHider ? state.cd.ink : state.cd.sonar;
+  const specialMax = amHider ? 20 : 15;
+  for (const [chip, cd, max, label] of [[ui.chipFlare, state.cd.flare, 15, 'Flare'], [ui.chipSpecial, specialCd, specialMax, specialName]]) {
+    chip.querySelector('span').textContent = cd > 0.05 ? `${label} ${Math.ceil(cd)}s` : label;
+    chip.querySelector('em').style.height = `${Math.min(100, cd / max * 100)}%`;
+    const cooling = cd > 0.05;
+    if (chip.classList.contains('cooling') && !cooling) { chip.classList.add('ready'); setTimeout(() => chip.classList.remove('ready'), 400); }
+    chip.classList.toggle('cooling', cooling);
+  }
+}
 
 // ---- Shooting ------------------------------------------------------------
 let fireCd = 0;
@@ -329,7 +433,7 @@ function tryShoot() {
 }
 function sharkSpheres(s) {
   const f = new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw));
-  return [-1.2, 0, 1.2].map(k => ({ kind: 'shark', id: s.id, center: s.pos.clone().addScaledVector(f, k), radius: k === 0 ? 1.0 : 0.85 }));
+  return [-0.9, 0, 0.9].map(k => ({ kind: 'shark', id: s.id, center: s.pos.clone().addScaledVector(f, k), radius: 0.8 }));
 }
 
 // ---- Loop ----------------------------------------------------------------
@@ -345,7 +449,7 @@ function frame(nowMs) {
   me.cover = state.phase === 'hide' && amSeeker;
   me.dazed = state.dazed || now < state.inkUntil;
   me.dead = state.dead;
-  me.baseSpeed = amSeeker ? 7 : 6.5;
+  me.baseSpeed = (amSeeker ? 7 : 6.5) * (state.boost ? 1.4 : 1);
 
   input.f = keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0;
   input.b = keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0;
@@ -363,8 +467,18 @@ function frame(nowMs) {
   updateWorld(now, dt);
 
   fireCd -= dt;
+  state.cd.flare = Math.max(0, state.cd.flare - dt); state.cd.ink = Math.max(0, state.cd.ink - dt); state.cd.sonar = Math.max(0, state.cd.sonar - dt);
   if (shootQueued || shootHeld) { shootQueued = false; tryShoot(); }
   if (tagQueued) { tagQueued = false; if (amSeeker && state.phase === 'seek') net.send({ type: 'tag' }); }
+  if (flareQueued) { flareQueued = false; if (!me.frozen && !me.dead && state.cd.flare <= 0.05) { net.send({ type: 'flare' }); state.cd.flare = 15; } else sfx.miss(); }
+  if (specialQueued) {
+    specialQueued = false;
+    if (amHider && !me.frozen && !me.dead && state.cd.ink <= 0.05) { net.send({ type: 'ink' }); state.cd.ink = 20; sfx.ink(); }
+    else if (amSeeker && state.phase === 'seek' && !me.dead && state.cd.sonar <= 0.05) { net.send({ type: 'sonar' }); state.cd.sonar = 15; }
+    else sfx.miss();
+  }
+  updateEffects(dt, now);
+  updateAbilityChips();
 
   // bullets: own-shot targets are sharks and the other fish
   const targets = [];
@@ -389,21 +503,27 @@ function frame(nowMs) {
   } else ui.danger.style.opacity = 0;
 
   ui.crosshair.classList.toggle('hot', amSeeker && near <= 2.0);
+  {
+    let onTarget = false;
+    for (const sh of sharks.values()) if (sh.state !== 'dead') for (const c of sharkSpheres(sh)) if (raySphere(camera.position, camForward, c.center, c.radius) < 80) onTarget = true;
+    for (const r of remotes.values()) if (raySphere(camera.position, camForward, r.pos.clone().add(new THREE.Vector3(0, PLAYER_HEIGHT / 2, 0)), 0.7) < 80) onTarget = true;
+    ui.crosshair.classList.toggle('target', onTarget);
+  }
   if (amSeeker && state.phase === 'seek') {
     if (near <= 2.0) { ui.hint.textContent = 'Press E to TAG!'; ui.hint.classList.add('action'); }
-    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E to tag · Space/C up/down · Shift dash'; ui.hint.classList.remove('action'); }
+    else { ui.hint.textContent = 'Find the hider · click to shoot (3 hits) · E tag · R sonar · Q flare · Shift dash'; ui.hint.classList.remove('action'); }
     const showSense = (state.timeLeft <= 30 && other) || (now < state.revealUntil && state.revealPos);
     ui.sense.classList.toggle('show', !!showSense);
     if (showSense) {
       const tp = now < state.revealUntil && state.revealPos ? state.revealPos : other.pos;
       const rel = Math.atan2(tp.x - me.pos.x, tp.z - me.pos.z) - Math.atan2(camFlat.x, camFlat.z);
       ui.senseArrow.style.transform = `rotate(${(-rel - Math.PI / 2).toFixed(3)}rad)`;
-      ui.senseText.textContent = now < state.revealUntil ? 'The hider respawned over there!' : 'You sense the hider…';
+      ui.senseText.textContent = now < state.revealUntil ? state.revealText : 'You sense the hider…';
     }
   } else {
     ui.sense.classList.remove('show');
-    if (amHider && state.phase === 'hide') ui.hint.textContent = 'Hide! Kelp, caves, the wreck, under coral… Space/C up/down · Shift dash · shoot sharks!';
-    else if (amHider && state.phase === 'seek') ui.hint.textContent = 'Stay hidden! Shooting the seeker inks their view. 3 hits on you = caught.';
+    if (amHider && state.phase === 'hide') ui.hint.textContent = 'Hide! Kelp, caves, pipes, clams, the wreck… Space/C up/down · Shift dash';
+    else if (amHider && state.phase === 'seek') ui.hint.textContent = 'Stay hidden! R ink cloud · Q flare lures LeBron · your shots ink the seeker · 3 hits = caught';
     else { ui.hint.textContent = 'WASD swim · Space up · C down · Shift dash · Click to shoot · E to tag'; }
     ui.hint.classList.remove('action');
   }

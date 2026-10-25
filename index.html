@@ -30,7 +30,11 @@
     <div id="center-msg"></div>
     <div id="sub-msg"></div>
     <div id="sense"><div id="sense-arrow">➤</div><div id="sense-text">You sense the hider…</div></div>
-    <div id="shark-warn" class="pill">🦈 SHARK!</div>
+    <div id="shark-warn" class="pill">🏀 LEBRON INCOMING!</div>
+    <div id="abilities">
+      <div class="chip" id="chip-flare"><b>Q</b><span>Flare</span><em></em></div>
+      <div class="chip" id="chip-special"><b>R</b><span>Ink</span><em></em></div>
+    </div>
     <div id="bottom">
       <div id="health"><div id="health-bar"></div><span id="health-text">100</span></div>
       <div id="hint" class="pill">WASD swim · Space up · C down · Shift dash · Click to shoot · E to tag</div>
@@ -38,22 +42,22 @@
     <div id="danger"></div>
     <div id="hurt"></div>
     <div id="ink"></div>
-    <div id="crosshair"><span></span></div>
-    <div id="eaten" class="hidden"><div>🦈 CHOMP!</div><p>You got eaten… respawning</p></div>
+    <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><span></span><div id="hitmark"></div></div>
+    <div id="eaten" class="hidden"><div>🏀 DUNKED ON!</div><p>LeBron posterized you… respawning</p></div>
   </div>
 
   <div id="blindfold" class="hidden">
     <div class="eyes"><span></span><span></span></div>
     <div id="blind-title">Eyes shut, fishy!</div>
-    <div id="blind-count">30</div>
-    <div id="blind-sub">The other fish is hiding in the reef…</div>
+    <div id="blind-count">10</div>
+    <div id="blind-sub">The other fish is hiding in the reef… 10 seconds!</div>
   </div>
 
   <div id="lobby">
     <div class="card">
       <div class="logo">🐟</div>
       <h1>Fish Hunt</h1>
-      <p class="tag">Two fish. One reef. Hide &amp; seek… with guns. And sharks.</p>
+      <p class="tag">Two fish. One reef. Hide &amp; seek… with guns. And LeBron.</p>
       <div id="join-form">
         <input id="name" maxlength="16" placeholder="Your fish name" autocomplete="off">
         <div class="row">
@@ -73,10 +77,11 @@
         </div>
       </div>
       <div class="rules">
-        <div><b>Hider</b> 🐠 gets 30s to vanish into the reef while the seeker shuts their eyes.</div>
+        <div><b>Hider</b> 🐠 gets 10s to vanish into the reef while the seeker shuts their eyes.</div>
         <div><b>Seeker</b> 🔫 has 100s to find them: land 3 shots or tag with <kbd>E</kbd>.</div>
-        <div><b>Sharks</b> 🦈 hunt both of you. Shoot them before they bite. Hider shots ink the seeker's view.</div>
-        <div>Roles swap each round. Hide in kelp, caves, the wreck, or under coral.</div>
+        <div><b>LeBron</b> 🏀 patrols the reef and dunks on both of you. Shoot him before he posterizes you.</div>
+        <div><kbd>Q</kbd> flare lures LeBron away · <kbd>R</kbd> ink cloud (hider) or sonar ping (seeker) · glowing pearls heal and speed you up.</div>
+        <div>Roles swap each round. Hide in kelp, caves, pipes, clams, the wreck, under boats and coral.</div>
         <div class="fine">Peer-to-peer over WebRTC — one of you hosts, the other joins with the code.</div>
       </div>
     </div>

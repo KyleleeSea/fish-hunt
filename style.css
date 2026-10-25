@@ -43,9 +43,26 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #danger { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(242, 110, 60, 0.7) 100%); transition: opacity 0.2s; }
 #hurt { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(220, 40, 40, 0.85) 100%); transition: opacity 0.1s; }
 #ink { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at 30% 40%, rgba(10,10,30,0.95) 0 18%, transparent 30%), radial-gradient(circle at 70% 65%, rgba(10,10,30,0.95) 0 22%, transparent 36%), radial-gradient(circle at 55% 20%, rgba(10,10,30,0.9) 0 12%, transparent 24%), radial-gradient(circle at 20% 80%, rgba(10,10,30,0.9) 0 14%, transparent 26%), rgba(10,10,30,0.55); transition: opacity 0.3s; }
-#crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.9); box-shadow: 0 0 6px rgba(0,0,0,0.5); }
-#crosshair span { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; }
-#crosshair.hot { border-color: var(--orange); }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+#crosshair span { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,0.8); }
+#crosshair i { position: absolute; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,0.8); border-radius: 2px; }
+#crosshair i.t, #crosshair i.b { left: 50%; width: 3px; height: 12px; margin-left: -1.5px; }
+#crosshair i.l, #crosshair i.r { top: 50%; height: 3px; width: 12px; margin-top: -1.5px; }
+#crosshair i.t { top: 0; } #crosshair i.b { bottom: 0; } #crosshair i.l { left: 0; } #crosshair i.r { right: 0; }
+#crosshair.hot i, #crosshair.hot span { background: var(--orange); }
+#crosshair.target i, #crosshair.target span { background: #ff5a5a; }
+#hitmark { position: absolute; inset: 6px; opacity: 0; background:
+  linear-gradient(45deg, transparent 46%, #ffd166 46%, #ffd166 54%, transparent 54%),
+  linear-gradient(-45deg, transparent 46%, #ffd166 46%, #ffd166 54%, transparent 54%); filter: drop-shadow(0 0 3px rgba(0,0,0,0.8)); }
+#hitmark.show { animation: hitpop 0.3s ease-out; }
+@keyframes hitpop { 0% { opacity: 1; transform: scale(1.5); } 100% { opacity: 0; transform: scale(0.9); } }
+#abilities { position: absolute; right: 18px; bottom: 20px; display: flex; gap: 10px; }
+.chip { position: relative; width: 92px; height: 60px; border-radius: 14px; background: rgba(243,251,255,0.9); box-shadow: 0 6px 18px rgba(0,30,60,0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-weight: 700; }
+.chip b { font-size: 20px; color: var(--sea); } .chip span { font-size: 13px; opacity: 0.8; }
+.chip em { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: rgba(31,124,182,0.35); font-style: normal; }
+.chip.cooling { opacity: 0.75; } .chip.cooling b { color: #8a98a8; }
+.chip.ready { animation: readypop 0.4s; } @keyframes readypop { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
+#bottom { padding: 0 120px; }
 #sense { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; flex-direction: column; align-items: center; gap: 6px; }
 #sense.show { display: flex; }
 #sense-arrow { font-size: 70px; color: #fff; text-shadow: 0 3px 0 rgba(0,30,60,0.4); transform-origin: center; animation: sniff 1s infinite; }

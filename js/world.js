@@ -99,6 +99,21 @@ export function buildWorld(scene) {
   for (const [x, z] of [[-12, -2], [14, -4], [0, 26], [-22, 8], [24, 12], [6, -8], [-8, 14], [18, -26], [-28, -14], [12, 10], [-16, 26], [26, -20], [0, -14]]) addCoralCluster(scene, x, z);
   for (const [x, z] of [[-2, 8], [18, 2], [-24, -18], [10, -24], [-12, 20]]) addTableCoral(scene, x, z);
 
+  // more places to hide
+  addPipe(scene, -24, -2, 0);
+  addPipe(scene, 12, 18, Math.PI / 2);
+  addClam(scene, -14, 14);
+  addClam(scene, 26, -14);
+  addClam(scene, 2, -30);
+  addRowboat(scene, 20, -2);
+  addRowboat(scene, -30, -20);
+  addBarrels(scene, -8, -14);
+  addBarrels(scene, 8, 26);
+  addBarrels(scene, 30, 10);
+  addCave(scene, 6, 30, Math.PI / 2);
+  for (const [x, z, r, n] of [[-30, -8, 3, 10], [16, 30, 3.5, 12], [30, -4, 3, 10]]) addKelp(scene, x, z, r, n);
+  for (const [x, z, r] of [[-20, -22, 4], [14, -14, 3.5], [-2, 18, 3.5], [24, 22, 3], [-12, 28, 3], [28, -28, 3]]) addSeagrass(scene, x, z, r);
+
   addSchools(scene);
   addStarfishAndShells(scene);
 
@@ -309,6 +324,146 @@ function addKelp(scene, cx, cz, radius, count) {
     box: { min: new THREE.Vector3(cx - radius - 0.5, 0, cz - radius - 0.5), max: new THREE.Vector3(cx + radius + 0.5, 11, cz + radius + 0.5) },
     mats,
   });
+}
+
+function addPipe(scene, x, z, yaw) {
+  // a rusty open pipe lying on the sand — swim through it or hide inside
+  const R = 1.25, L = 6.5;
+  const g = new THREE.Group();
+  g.position.set(x, R - 0.1, z);
+  g.rotation.y = yaw;
+  const outer = mesh(new THREE.CylinderGeometry(R, R, L, 18, 1, true), 0x8a7a6a);
+  outer.rotation.z = Math.PI / 2;
+  g.add(outer);
+  const inner = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.12, R - 0.12, L, 18, 1, true), new THREE.MeshStandardMaterial({ color: 0x3a3430, side: THREE.BackSide, roughness: 1 }));
+  inner.rotation.z = Math.PI / 2;
+  g.add(inner);
+  for (const sx of [-1, 1]) {
+    const rim = mesh(new THREE.TorusGeometry(R, 0.1, 8, 24), 0xa36a3a);
+    rim.rotation.y = Math.PI / 2;
+    rim.position.x = sx * L / 2;
+    g.add(rim);
+  }
+  for (let i = 0; i < 5; i++) {
+    const rust = mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.3, 7, 5), 0xa36a3a);
+    const a = Math.random() * Math.PI * 2;
+    rust.position.set((Math.random() - 0.5) * L, Math.cos(a) * R, Math.sin(a) * R);
+    rust.scale.y = 0.4;
+    g.add(rust);
+  }
+  scene.add(g);
+  const along = Math.abs(Math.sin(yaw)) > 0.5; // pipe runs along z instead of x
+  const wall = (cx, cz, w, d) => collider(cx, 0, cz, w, 2 * R - 0.1, d);
+  if (!along) { wall(x, z - R + 0.1, L, 0.4); wall(x, z + R - 0.1, L, 0.4); collider(x, 2 * R - 0.55, z, L, 0.5, 2 * R); }
+  else { wall(x - R + 0.1, z, 0.4, L); wall(x + R - 0.1, z, 0.4, L); collider(x, 2 * R - 0.55, z, 2 * R, 0.5, L); }
+}
+
+function addClam(scene, x, z) {
+  // giant clam, open: swim in between the shells
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  const shellMat = mat(0xd9c7b2, { flatShading: true });
+  const bottom = new THREE.Mesh(new THREE.SphereGeometry(1.9, 12, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), shellMat);
+  bottom.scale.set(1, 0.45, 1);
+  bottom.position.y = 0.85;
+  bottom.castShadow = true; bottom.receiveShadow = true;
+  g.add(bottom);
+  const lip = mesh(new THREE.TorusGeometry(1.9, 0.12, 8, 24), 0xcbb59a);
+  lip.rotation.x = Math.PI / 2;
+  lip.position.y = 0.85;
+  g.add(lip);
+  const flesh = mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.25, 20), 0xf27d9d);
+  flesh.position.y = 0.8;
+  g.add(flesh);
+  const hinge = new THREE.Group();
+  hinge.position.set(0, 0.9, -1.9);
+  hinge.rotation.x = -1.15;
+  const top = new THREE.Mesh(new THREE.SphereGeometry(1.9, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), shellMat);
+  top.scale.set(1, 0.45, 1);
+  top.position.set(0, 0, 1.9);
+  top.castShadow = true;
+  hinge.add(top);
+  g.add(hinge);
+  for (let i = 0; i < 8; i++) {
+    const ridge = mesh(new THREE.BoxGeometry(0.1, 0.1, 3.6), 0xcbb59a);
+    ridge.rotation.y = (i / 8) * Math.PI;
+    ridge.position.y = 0.2;
+    ridge.scale.y = 0.5;
+    g.add(ridge);
+  }
+  scene.add(g);
+  collider(x, 0, z, 3.4, 0.85, 3.4);                       // sit on the bottom shell
+  collider(x, 2.4, z, 3.6, 2.0, 3.6, { cameraOnly: true }); // top shell shades the camera
+}
+
+function addRowboat(scene, x, z) {
+  // an upturned rowboat propped on rocks — hide underneath
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const hull = mesh(new THREE.BoxGeometry(5, 1.1, 2.2), 0x7f5236);
+  hull.position.y = 1.9;
+  g.add(hull);
+  const bow = mesh(new THREE.ConeGeometry(1.1, 1.6, 4), 0x7f5236);
+  bow.rotation.z = -Math.PI / 2;
+  bow.rotation.x = Math.PI / 4;
+  bow.position.set(3.2, 1.9, 0);
+  bow.scale.y = 1;
+  g.add(bow);
+  const keel = mesh(new THREE.BoxGeometry(5.6, 0.14, 0.2), 0x5c3a24);
+  keel.position.y = 2.5;
+  g.add(keel);
+  for (const sz of [-1, 1]) {
+    const plank = mesh(new THREE.BoxGeometry(5.2, 0.08, 0.1), 0x9a6a46);
+    plank.position.set(0, 2.1, sz * 1.1);
+    g.add(plank);
+  }
+  for (const [rx, rz] of [[-1.8, 0.4], [1.9, -0.5]]) {
+    const rock = mesh(new THREE.DodecahedronGeometry(0.8, 0), 0x6b7f9a, { flatShading: true });
+    rock.position.set(rx, 0.6, rz);
+    rock.scale.set(1, 1.2, 1);
+    g.add(rock);
+    collider(x + rx, 0, z + rz, 1.4, 1.4, 1.4);
+  }
+  scene.add(g);
+  collider(x, 1.35, z, 5.4, 1.2, 2.2);
+}
+
+function addBarrels(scene, x, z) {
+  const colors = [0x7f5236, 0x5c3a24, 0x8a6a4a];
+  const spots = [[0, 0, true], [1.1, 0.3, true], [0.5, 1.2, true], [-1.0, 0.9, false], [1.7, -0.9, false], [-0.9, -1.0, true]];
+  spots.forEach(([dx, dz, standing], i) => {
+    const barrel = mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.1, 12), colors[i % colors.length]);
+    const bx = x + dx * 1.3, bz = z + dz * 1.3;
+    if (standing) { barrel.position.set(bx, 0.55, bz); collider(bx, 0, bz, 1.0, 1.1, 1.0); }
+    else { barrel.rotation.z = Math.PI / 2; barrel.rotation.y = i; barrel.position.set(bx, 0.5, bz); collider(bx, 0, bz, 1.1, 1.0, 1.1); }
+    scene.add(barrel);
+    for (const yy of [-0.35, 0.35]) {
+      const band = mesh(new THREE.TorusGeometry(0.5, 0.04, 6, 16), 0x4a4a52);
+      band.rotation.x = Math.PI / 2;
+      band.position.y = yy;
+      barrel.add(band);
+    }
+  });
+}
+
+function addSeagrass(scene, cx, cz, radius) {
+  const m = mat(0x5fbf7a).clone();
+  const blades = [];
+  const n = Math.floor(radius * radius * 2.2);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * radius;
+    const h = 1.6 + Math.random() * 1.4;
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.12, h, 4), m);
+    blade.position.set(cx + Math.cos(a) * r, h / 2, cz + Math.sin(a) * r);
+    blade.rotation.y = Math.random() * Math.PI;
+    blade.userData.ph = Math.random() * 6;
+    blade.castShadow = true;
+    scene.add(blade);
+    blades.push(blade);
+  }
+  animated.push({ update(t) { for (const b of blades) { b.rotation.x = Math.sin(t * 1.1 + b.userData.ph) * 0.12; b.rotation.z = Math.cos(t * 0.8 + b.userData.ph) * 0.1; } } });
+  hideVolumes.push({ box: { min: new THREE.Vector3(cx - radius - 0.4, 0, cz - radius - 0.4), max: new THREE.Vector3(cx + radius + 0.4, 3.2, cz + radius + 0.4) }, mats: [m] });
 }
 
 function addCoralCluster(scene, x, z) {
